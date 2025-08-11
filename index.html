@@ -4,9 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Swim Race Tracker</title>
-  <!-- Tailwind via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- PapaParse for CSV parsing -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -24,6 +22,67 @@
         <li>Commit + push. GitHub Pages will serve this page and it will fetch your CSV.</li>
         <li>Use the filters to see trends, and look for the <span class="px-2 py-0.5 rounded bg-green-100 text-green-800">PR</span> badge for personal bests.</li>
       </ol>
+    </section>
+
+    <!-- Quick Add Form -->
+    <section class="mb-6 bg-white rounded-2xl shadow p-4">
+      <h2 class="text-xl font-semibold mb-3">Quick add a race</h2>
+      <div class="grid md:grid-cols-4 gap-3 text-sm">
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Date</label>
+          <input id="qaDate" type="date" class="w-full border rounded-xl p-2"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Season (year)</label>
+          <input id="qaSeason" type="text" class="w-full border rounded-xl p-2" placeholder="e.g., 2025"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Swimmer</label>
+          <input id="qaSwimmer" type="text" class="w-full border rounded-xl p-2" placeholder="Jane Doe"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Event</label>
+          <input id="qaEvent" type="text" class="w-full border rounded-xl p-2" placeholder="100 Free"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Stroke</label>
+          <input id="qaStroke" type="text" class="w-full border rounded-xl p-2" placeholder="Freestyle"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Distance (yd/m)</label>
+          <input id="qaDistance" type="text" class="w-full border rounded-xl p-2" placeholder="100y"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Time</label>
+          <input id="qaTime" type="text" class="w-full border rounded-xl p-2" placeholder="1:12.34 or 36.90"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Place</label>
+          <input id="qaPlace" type="text" class="w-full border rounded-xl p-2" placeholder="3"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Heat</label>
+          <input id="qaHeat" type="text" class="w-full border rounded-xl p-2" placeholder="5"/>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">Lane</label>
+          <input id="qaLane" type="text" class="w-full border rounded-xl p-2" placeholder="3"/>
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-gray-600 mb-1">Meet</label>
+          <input id="qaMeet" type="text" class="w-full border rounded-xl p-2" placeholder="City Summer Meet"/>
+        </div>
+        <div class="md:col-span-4">
+          <label class="block text-xs text-gray-600 mb-1">Notes</label>
+          <input id="qaNotes" type="text" class="w-full border rounded-xl p-2" placeholder="PR drop 0.8s"/>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 mt-3">
+        <button id="qaCopyRow" class="border p-2 rounded-xl hover:bg-gray-100">Copy CSV row</button>
+        <button id="qaDownloadRow" class="border p-2 rounded-xl hover:bg-gray-100">Download CSV row</button>
+        <button id="qaAppendAndDownload" class="border p-2 rounded-xl hover:bg-gray-100">Download UPDATED races.csv (appends this row)</button>
+      </div>
+      <p class="text-xs text-gray-500 mt-2">Tip: After downloading the updated file, go to <code>data/races.csv</code> in GitHub and click the pencil to replace its contents with the downloaded file.</p>
     </section>
 
     <!-- Filters -->
@@ -105,11 +164,10 @@
       return m > 0 ? `${m}:${s.padStart(5,'0')}` : `${Number(s).toFixed(2)}`;
     }
 
-    // Fetch CSV
     const CSV_URL = 'data/races.csv';
 
     let rows = [];
-    let prs = new Map(); // key: swimmer|event -> best seconds
+    let prs = new Map();
 
     function buildFilters(data) {
       const swimmers = Array.from(new Set(data.map(r => r.Swimmer))).sort();
@@ -147,16 +205,13 @@
       const statsEl = document.getElementById('stats');
       statsEl.innerHTML = '';
 
-      // Total races
       const total = data.length;
-      // PR count
       let prCount = 0;
       data.forEach(r => {
         const key = `${r.Swimmer}|${r.Event}`;
         const t = timeToSeconds(r.Time);
         if (t != null && prs.get(key) === t) prCount++;
       });
-      // Swimmers count
       const swimmers = new Set(data.map(r => r.Swimmer)).size;
 
       const card = (title, value) => `
@@ -186,7 +241,6 @@
       const body = document.getElementById('tableBody');
       body.innerHTML = '';
 
-      // Sort by date descending, then time ascending
       data.sort((a,b) => {
         const da = new Date(a.Date), db = new Date(b.Date);
         if (db - da !== 0) return db - da;
@@ -235,7 +289,7 @@
       URL.revokeObjectURL(url);
     }
 
-    // Event listeners
+    // Event listeners for filters
     document.getElementById('resetBtn').addEventListener('click', () => {
       ['filterSwimmer','filterEvent','filterSeason'].forEach(id => document.getElementById(id).value = '');
       updateUI();
@@ -245,7 +299,7 @@
       document.getElementById(id).addEventListener('change', updateUI);
     });
 
-    // Load data
+    // Load CSV data
     Papa.parse(CSV_URL, {
       header: true,
       download: true,
@@ -273,6 +327,73 @@
         console.error('Failed to load CSV', err);
       }
     });
+
+    // ---------- Quick Add: helpers ----------
+    function getFormRow() {
+      const d = document.getElementById('qaDate')?.value || '';
+      const seasonInput = document.getElementById('qaSeason');
+      if (seasonInput && !seasonInput.value && d) seasonInput.value = new Date(d).getFullYear();
+      return {
+        Date: d,
+        Season: seasonInput ? (seasonInput.value || '') : '',
+        Swimmer: document.getElementById('qaSwimmer')?.value.trim() || '',
+        Event: document.getElementById('qaEvent')?.value.trim() || '',
+        Stroke: document.getElementById('qaStroke')?.value.trim() || '',
+        Distance: document.getElementById('qaDistance')?.value.trim() || '',
+        Time: document.getElementById('qaTime')?.value.trim() || '',
+        Place: document.getElementById('qaPlace')?.value.trim() || '',
+        Heat: document.getElementById('qaHeat')?.value.trim() || '',
+        Lane: document.getElementById('qaLane')?.value.trim() || '',
+        Meet: document.getElementById('qaMeet')?.value.trim() || '',
+        Notes: document.getElementById('qaNotes')?.value.trim() || ''
+      };
+    }
+
+    function rowAsCSV(row) {
+      return Papa.unparse([row]);
+    }
+
+    function download(filename, text) {
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function appendAndDownloadCSV() {
+      try {
+        const res = await fetch(CSV_URL, { cache: 'no-store' });
+        if (!res.ok) throw new Error('Fetch failed');
+        const csvText = await res.text();
+        const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+        const dataNow = parsed.data || [];
+        const newRow = getFormRow();
+        dataNow.push(newRow);
+        const newCSV = Papa.unparse(dataNow);
+        download('races.csv', newCSV);
+      } catch (e) {
+        console.error('Append failed', e);
+        alert('Could not fetch existing CSV. Is data/races.csv published yet?');
+      }
+    }
+
+    document.getElementById('qaCopyRow')?.addEventListener('click', async () => {
+      const csv = rowAsCSV(getFormRow()).trim();
+      try {
+        await navigator.clipboard.writeText(csv);
+        alert('CSV row copied. Paste it at the bottom of data/races.csv in GitHub.');
+      } catch {
+        alert('Copy failed. Download the row instead.');
+      }
+    });
+
+    document.getElementById('qaDownloadRow')?.addEventListener('click', () => {
+      const csv = rowAsCSV(getFormRow());
+      download('swim_row.csv', csv);
+    });
+
+    document.getElementById('qaAppendAndDownload')?.addEventListener('click', appendAndDownloadCSV);
   </script>
 </body>
 </html>
