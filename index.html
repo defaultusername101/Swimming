@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Swim Race Tracker</title>
+  <!-- Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div class="max-w-6xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold">🏊 Swim Race Tracker</h1>
+      <p class="text-sm text-gray-600">Drop your results in <code>data/races.csv</code> (headers below). This page will render stats automatically on GitHub Pages.</p>
+    </header>
+
+    <!-- Quick instructions -->
+    <section class="mb-6 bg-white rounded-2xl shadow p-4">
+      <h2 class="text-xl font-semibold mb-2">How to use</h2>
+      <ol class="list-decimal ml-5 text-sm leading-6">
+        <li>Create a folder <code>data</code> in this repo and add a <code>races.csv</code> file with the headers shown under <em>CSV format</em> below.</li>
+        <li>Commit + push. GitHub Pages will serve this page and it will fetch your CSV.</li>
+        <li>Use the filters to see trends, and look for the <span class="px-2 py-0.5 rounded bg-green-100 text-green-800">PR</span> badge for personal bests.</li>
+      </ol>
+    </section>
+
+    <!-- Filters -->
+    <section class="mb-4 grid md:grid-cols-4 gap-3 items-end">
+      <div>
+        <label class="block text-xs text-gray-600 mb-1">Swimmer</label>
+        <select id="filterSwimmer" class="w-full border rounded-xl p-2"></select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-600 mb-1">Event</label>
+        <select id="filterEvent" class="w-full border rounded-xl p-2"></select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-600 mb-1">Season (year)</label>
+        <select id="filterSeason" class="w-full border rounded-xl p-2"></select>
+      </div>
+      <div class="flex gap-2">
+        <button id="resetBtn" class="border p-2 rounded-xl hover:bg-gray-100">Reset</button>
+        <button id="downloadBtn" class="border p-2 rounded-xl hover:bg-gray-100">Download filtered CSV</button>
+      </div>
+    </section>
+
+    <!-- Stats cards -->
+    <section id="stats" class="grid md:grid-cols-3 gap-4 mb-6"></section>
+
+    <!-- Table -->
+    <section class="bg-white rounded-2xl shadow overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm" id="resultsTable">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="px-3 py-2 text-left">Date</th>
+              <th class="px-3 py-2 text-left">Season</th>
+              <th class="px-3 py-2 text-left">Swimmer</th>
+              <th class="px-3 py-2 text-left">Event</th>
+              <th class="px-3 py-2 text-left">Stroke</th>
+              <th class="px-3 py-2 text-left">Distance (yd/m)</th>
+              <th class="px-3 py-2 text-left">Time</th>
+              <th class="px-3 py-2 text-left">Place</th>
+              <th class="px-3 py-2 text-left">Heat</th>
+              <th class="px-3 py-2 text-left">Lane</th>
+              <th class="px-3 py-2 text-left">Meet</th>
+              <th class="px-3 py-2 text-left">Notes</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CSV format help -->
+    <section class="mt-8 text-sm text-gray-700">
+      <h2 class="text-lg font-semibold mb-2">CSV format</h2>
+      <pre class="bg-gray-900 text-gray-100 p-4 rounded-xl overflow-x-auto"><code>Date,Season,Swimmer,Event,Stroke,Distance,Time,Place,Heat,Lane,Meet,Notes
+2025-08-09,2025,Jane Doe,100 Free,Freestyle,100y,1:12.34,3,5,3,City Summer Meet,Strong finish
+2025-08-09,2025,Jane Doe,50 Fly,Butterfly,50y,0:36.90,2,3,4,City Summer Meet,PR drop 0.8s
+2025-08-09,2025,June Doe,50 Free,Freestyle,50y,0:38.12,4,2,5,City Summer Meet,First 50 Free</code></pre>
+      <p class="mt-2">Time supports <code>MM:SS.ss</code> or <code>SS.ss</code>. Distance can be <code>25y, 50m</code>, etc.</p>
+    </section>
+  </div>
+
+  <script>
+    // ---------- Utility: parse time strings to seconds (number) and back ----------
+    function timeToSeconds(t) {
+      if (!t) return null;
+      const parts = t.split(':');
+      if (parts.length === 1) return parseFloat(parts[0]);
+      if (parts.length === 2) {
+        const m = parseInt(parts[0], 10) || 0;
+        const s = parseFloat(parts[1]) || 0;
+        return m * 60 + s;
+      }
+      return null;
+    }
+    function secondsToTime(sec) {
+      if (sec == null || isNaN(sec)) return '';
+      const m = Math.floor(sec / 60);
+      const s = (sec % 60).toFixed(2).padStart(5, '0');
+      return m > 0 ? `${m}:${s.padStart(5,'0')}` : `${Number(s).toFixed(2)}`;
+    }
+
+    // Fetch CSV
+    const CSV_URL = 'data/races.csv';
+
+    let rows = [];
+    let prs = new Map(); // key: swimmer|event -> best seconds
+
+    function buildFilters(data) {
+      const swimmers = Array.from(new Set(data.map(r => r.Swimmer))).sort();
+      const events = Array.from(new Set(data.map(r => r.Event))).sort();
+      const seasons = Array.from(new Set(data.map(r => r.Season))).sort();
+
+      const addOptions = (select, values) => {
+        select.innerHTML = '';
+        const any = document.createElement('option');
+        any.value = '';
+        any.textContent = 'All';
+        select.appendChild(any);
+        values.forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v; opt.textContent = v; select.appendChild(opt);
+        });
+      };
+
+      addOptions(document.getElementById('filterSwimmer'), swimmers);
+      addOptions(document.getElementById('filterEvent'), events);
+      addOptions(document.getElementById('filterSeason'), seasons);
+    }
+
+    function computePRs(data) {
+      prs.clear();
+      data.forEach(r => {
+        const key = `${r.Swimmer}|${r.Event}`;
+        const t = timeToSeconds(r.Time);
+        if (t == null || isNaN(t)) return;
+        if (!prs.has(key) || t < prs.get(key)) prs.set(key, t);
+      });
+    }
+
+    function renderStats(data) {
+      const statsEl = document.getElementById('stats');
+      statsEl.innerHTML = '';
+
+      // Total races
+      const total = data.length;
+      // PR count
+      let prCount = 0;
+      data.forEach(r => {
+        const key = `${r.Swimmer}|${r.Event}`;
+        const t = timeToSeconds(r.Time);
+        if (t != null && prs.get(key) === t) prCount++;
+      });
+      // Swimmers count
+      const swimmers = new Set(data.map(r => r.Swimmer)).size;
+
+      const card = (title, value) => `
+        <div class="bg-white rounded-2xl shadow p-4">
+          <div class="text-xs text-gray-500">${title}</div>
+          <div class="text-2xl font-semibold">${value}</div>
+        </div>`;
+
+      statsEl.insertAdjacentHTML('beforeend', card('Total Races', total));
+      statsEl.insertAdjacentHTML('beforeend', card('Personal Records (PRs) in view', prCount));
+      statsEl.insertAdjacentHTML('beforeend', card('Swimmers', swimmers));
+    }
+
+    function applyFilters() {
+      const s = document.getElementById('filterSwimmer').value;
+      const e = document.getElementById('filterEvent').value;
+      const y = document.getElementById('filterSeason').value;
+
+      return rows.filter(r =>
+        (!s || r.Swimmer === s) &&
+        (!e || r.Event === e) &&
+        (!y || r.Season === y)
+      );
+    }
+
+    function renderTable(data) {
+      const body = document.getElementById('tableBody');
+      body.innerHTML = '';
+
+      // Sort by date descending, then time ascending
+      data.sort((a,b) => {
+        const da = new Date(a.Date), db = new Date(b.Date);
+        if (db - da !== 0) return db - da;
+        const ta = timeToSeconds(a.Time) || Infinity;
+        const tb = timeToSeconds(b.Time) || Infinity;
+        return ta - tb;
+      });
+
+      data.forEach(r => {
+        const key = `${r.Swimmer}|${r.Event}`;
+        const isPR = (timeToSeconds(r.Time) != null && prs.get(key) === timeToSeconds(r.Time));
+        const tr = document.createElement('tr');
+        tr.className = isPR ? 'bg-green-50' : '';
+        tr.innerHTML = `
+          <td class="px-3 py-2 whitespace-nowrap">${r.Date || ''}</td>
+          <td class="px-3 py-2">${r.Season || ''}</td>
+          <td class="px-3 py-2">${r.Swimmer || ''}</td>
+          <td class="px-3 py-2">${r.Event || ''}</td>
+          <td class="px-3 py-2">${r.Stroke || ''}</td>
+          <td class="px-3 py-2">${r.Distance || ''}</td>
+          <td class="px-3 py-2">${r.Time || ''} ${isPR ? '<span class="ml-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">PR</span>' : ''}</td>
+          <td class="px-3 py-2">${r.Place || ''}</td>
+          <td class="px-3 py-2">${r.Heat || ''}</td>
+          <td class="px-3 py-2">${r.Lane || ''}</td>
+          <td class="px-3 py-2">${r.Meet || ''}</td>
+          <td class="px-3 py-2">${r.Notes || ''}</td>`;
+        body.appendChild(tr);
+      });
+    }
+
+    function updateUI() {
+      const filtered = applyFilters();
+      renderStats(filtered);
+      renderTable(filtered);
+    }
+
+    function downloadFilteredCSV() {
+      const filtered = applyFilters();
+      const csv = Papa.unparse(filtered);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'swim_results_filtered.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Event listeners
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      ['filterSwimmer','filterEvent','filterSeason'].forEach(id => document.getElementById(id).value = '');
+      updateUI();
+    });
+    document.getElementById('downloadBtn').addEventListener('click', downloadFilteredCSV);
+    ['filterSwimmer','filterEvent','filterSeason'].forEach(id => {
+      document.getElementById(id).addEventListener('change', updateUI);
+    });
+
+    // Load data
+    Papa.parse(CSV_URL, {
+      header: true,
+      download: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        rows = results.data.map(r => ({
+          Date: r.Date?.trim(),
+          Season: r.Season?.trim(),
+          Swimmer: r.Swimmer?.trim(),
+          Event: r.Event?.trim(),
+          Stroke: r.Stroke?.trim(),
+          Distance: r.Distance?.trim(),
+          Time: r.Time?.trim(),
+          Place: r.Place?.trim(),
+          Heat: r.Heat?.trim(),
+          Lane: r.Lane?.trim(),
+          Meet: r.Meet?.trim(),
+          Notes: r.Notes?.trim()
+        }));
+        buildFilters(rows);
+        computePRs(rows);
+        updateUI();
+      },
+      error: (err) => {
+        console.error('Failed to load CSV', err);
+      }
+    });
+  </script>
+</body>
+</html>
