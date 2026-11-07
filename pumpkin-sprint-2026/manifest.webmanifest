@@ -1,0 +1,11 @@
+{
+  "name": "Pumpkin Sprint Meet 2026",
+  "short_name": "Pumpkin Sprint",
+  "description": "Searchable swim heat sheets and private results",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6f8",
+  "theme_color": "#0c2335",
+  "orientation": "portrait-primary"
+}
